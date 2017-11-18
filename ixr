@@ -1,0 +1,165 @@
+#!/usr/bin/python
+
+"""\
+This program provides an interactive interface for xrandr which lets users
+enable / disable connected displays and position them relative to each other.
+"""
+
+import subprocess
+import sys
+
+def list_outputs(outputs, connected_outputs):
+    """\
+    Prints the outputs to stdout.
+    
+    Args:
+        outputs             Dict, each element is a dict with keys
+                                "enable", "position".
+        connected_outputs   List of strings whose elements are a subset of
+                                outputs.keys() listing those outputs which are
+                                connected according to xrandr.
+    """
+    print
+    for output in outputs:
+        print  "Output:", output,   \
+                "(connected)" if output in connected_outputs else ""
+        print  "    Enabled:", str(outputs[output]["enable"])
+        print  "    Position:", outputs[output]["position"]
+        
+def main(argv):
+    # Parse args.
+    if "-h" in argv or "--help" in argv:
+        print  "vgaconnect2 -- Manage X display outputs."
+        print
+        print  "USAGE"
+        print  "    ixr [OPTIONS]"
+        print
+        print  "OPTIONS"
+        print  "    -h, --help      Print this help and exit."
+        print  "    -d, --defaults  Do not query user."
+        return 0
+    DEFAULTS = True if "-d" in argv or "--defaults" in argv else False
+    
+    # Query xrandr for connected outputs.
+    p = subprocess.Popen("xrandr", shell=True, stdout=subprocess.PIPE)
+    xrandr_output = p.communicate()[0]
+    xrandr_output = xrandr_output.split("\n")
+    connected_outputs = []
+    available_outputs = []
+    for line in xrandr_output:
+        if " connected" in line:
+            connected_outputs += [line.split(" ")[0]]
+        if "connected" in line:
+            available_outputs += [line.split(" ")[0]]
+    
+    # Set default values: disconnected outputs are off, connected ones are
+    # enabled and positioned left-to-right in the order that they are listed in
+    # in xrandr output.
+    outputs = {}
+    for output in available_outputs:
+        outputs[output] = {}
+        outputs[output]["enable"] = False
+        outputs[output]["position"] = ""
+    for (idx, output) in enumerate(connected_outputs):
+        outputs[output]["enable"] = True
+        outputs[output]["position"] = ""    if idx == 0             \
+                                            else    "--right-of %s" \
+                                                    % connected_outputs[idx - 1]
+                                                    
+    # Query user for outputs configuration.
+    if not DEFAULTS:
+        while True:
+            command = raw_input("[l|m|q|?] > ").lower()
+            if command == "?":
+                print
+                print  "COMMANDS"
+                print  "    ?       Print this help."
+                print  "    l       List all available outputs."
+                print  "    m       Enable / disbale output, change position."
+                print  "    q       Quit; you will be asked to confirm changes."
+                print
+                print  "MODIFYING OUTPUTS"
+                print  "    When queried for an output to modify, leave the"
+                print  "    input empty to get a list of available inputs"
+                print  "    (like \"l\" command)."                
+                print  "    When queried for enable state of output, leave the"
+                print  "    input empty to retain the current value. Entering"
+                print  "    \"False\", \"n\", \"0\" or a single dash (-) will"
+                print  "    disable the output (case-insensitive); any other"
+                print  "    input will enable it."
+                print  "    When queried for a position, leave the input empty"
+                print  "    to leave it at the current value. Entering a single"
+                print  "    dash (-) means it should be replaced with an empty"
+                print  "    string (i.e. no position specified). Use this with"
+                print  "    disabled outputs (resolution == \"--off\") or a"
+                print  "    single output relative to which all other outputs"
+                print  "    are positioned. See xrandr manpage for accepted"
+                print  "    positions."
+            elif command == "l":
+                list_outputs(outputs, connected_outputs)
+            elif command == "m":
+                # Query for output to modify.
+                while True:
+                    print
+                    m_output = raw_input("Which output? > ").upper()
+                    if m_output == "":
+                        list_outputs(outputs, connected_outputs)
+                    elif not m_output in connected_outputs:
+                        print
+                        print "Output", m_output, "not connected or unknown."
+                    else: # Valid output.
+                        break
+                # Query for enable state.
+                print
+                m_en = raw_input("Enable state (current: %s) > "    \
+                                    % str(outputs[m_output]["enable"])).lower()
+                if not m_en == "":
+                    outputs[m_output]["enable"] =   \
+                        not m_en in ["false", "n", "-", "0"]
+                # Clear position if output is disabled, otherwise query.
+                if not outputs[m_output]["enable"]:
+                    outputs[m_output]["position"] = ""
+                else:
+                    print
+                    m_pos = raw_input("Position (current: \"%s\") > "   \
+                                        % outputs[m_output]["position"])
+                    if not m_pos == "":
+                        outputs[m_output]["position"] = ""              \
+                                                        if m_pos == "-" \
+                                                        else m_pos
+            elif command == "q":
+                # Make sure no disconnected outputs are enabled.
+                for output in outputs:
+                    if outputs[output]["enable"]    \
+                    and not output in connected_outputs:
+                        print
+                        print "Error: No disconnected outputs may be enabled!"
+                        break
+                else:
+                    break
+            print
+            
+    # Apply changes if requested.
+    apply_changes = False
+    if not DEFAULTS:
+        print
+        apply_changes = raw_input("Apply changes? [y|N] > ").lower() == "y"
+    if DEFAULTS or apply_changes:
+        xrandr_cmd = "xrandr"
+        for output in connected_outputs:
+            xrandr_cmd += " --output " + output
+            xrandr_cmd += " --auto" if outputs[output]["enable"] else " --off"
+            xrandr_cmd += " " + outputs[output]["position"]
+        if not DEFAULTS:
+            print
+        print "Applying changes:"
+        print xrandr_cmd
+        p = subprocess.Popen(xrandr_cmd, shell=True)
+    else:
+        print
+        print "No changes are applied."
+            
+    return 0
+    
+if __name__ == "__main__":
+    main(sys.argv)
