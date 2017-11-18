@@ -29,7 +29,7 @@ def list_outputs(outputs, connected_outputs):
 def main(argv):
     # Parse args.
     if "-h" in argv or "--help" in argv:
-        print  "vgaconnect2 -- Manage X display outputs."
+        print  "interactive-xrandr -- Manage X display outputs."
         print
         print  "USAGE"
         print  "    ixr [OPTIONS]"
